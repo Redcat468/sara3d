@@ -315,6 +315,7 @@ const container = document.getElementById('renderer');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a0f);
 scene.fog = new THREE.FogExp2(0x0a0a0f, 0.012);
+scene.scale.set(1, 1, -1); // fix mirror SH3D → Three.js
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
 camera.position.set(12, 14, 20);
@@ -332,7 +333,7 @@ controls.dampingFactor = 0.08;
 controls.maxPolarAngle = Math.PI * 0.48;
 controls.minDistance = 1;
 controls.maxDistance = 80;
-controls.target.set(10, 1, 5);
+controls.target.set(0, 0, 0);
 controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
 // Lighting — hemisphere pour faux AO (sol sombre, ciel clair)
@@ -563,7 +564,7 @@ function topView() {
   const dH = (size.z / 2) / Math.tan(fov / 2);
   const dW = (size.x / 2) / (Math.tan(fov / 2) * aspect);
   const d = Math.max(dH, dW) * 1.1;
-  camera.position.set(center.x, center.y + d, center.z + 0.01);
+  camera.position.set(center.x, center.y + d, center.z - 0.01);
   controls.update();
 }
 function perspView() {
@@ -650,7 +651,7 @@ function animate() {
   renderer.render(scene, camera);
   infoEl.textContent = `${activeLevel === 'all' ? 'ALL' : activeLevel}`;
 }
-topView(); animate();
+requestAnimationFrame(() => { onResize(); topView(); controls.update(); }); animate();
 </script>
 </body>
 </html>
