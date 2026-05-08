@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>SARABAND — 3D Viewer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+  :root {
+    --bg: #0a0a0f;
+    --surface: #14141c;
+    --border: #252535;
+    --text: #e0e0ea;
+    --dim: #6a6a80;
+    --accent: #6c8aff;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100dvh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+  }
+  #renderer { flex:1; position:relative; }
+  canvas { display:block; }
+  .topbar {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px;
+    background: var(--surface);
+    border-bottom:1px solid var(--border);
+    z-index:20; flex-shrink:0;
+  }
+  .topbar h1 { font-size:14px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+  .topbar h1 span { color:var(--accent); font-weight:400; }
+  .tabs { display:flex; gap:3px; background:var(--bg); border-radius:8px; padding:3px; }
+  .tab {
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600;
+    padding:5px 11px; border:none; border-radius:6px; cursor:pointer;
+    background:transparent; color:var(--dim); transition:all .2s;
+  }
+  .tab:hover { color:var(--text); }
+  .tab.on { background:var(--accent); color:#fff; box-shadow:0 2px 8px rgba(108,138,255,.3); }
+  .side {
+    position:absolute; bottom:14px; right:14px;
+    display:flex; flex-direction:column; gap:4px; z-index:10;
+  }
+  .side button {
+    width:38px; height:38px; border-radius:9px;
+    border:1px solid var(--border); background:var(--surface);
+    color:var(--text); font-size:18px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'JetBrains Mono',monospace; transition:all .15s;
+  }
+  .side button:hover { background:var(--border); }
+  .side button:active { transform:scale(.9); }
+  .info {
+    position:absolute; bottom:14px; left:14px;
+    font-family:'JetBrains Mono',monospace; font-size:10px;
+    color:var(--dim); background:rgba(10,10,15,.85);
+    padding:5px 9px; border-radius:6px; z-index:10; backdrop-filter:blur(6px);
+  }
+  .opacity-ctrl {
+    position:absolute; top:12px; right:12px; z-index:10;
+    background:rgba(20,20,28,.9); border:1px solid var(--border);
+    border-radius:8px; padding:8px 12px; backdrop-filter:blur(8px);
+  }
+  .opacity-ctrl label { font-size:10px; color:var(--dim); display:block; margin-bottom:4px; }
+  .opacity-ctrl input[type=range] { width:100px; accent-color:var(--accent); }
+  .section-ctrl {
+    position:absolute; top:12px; left:12px; z-index:10;
+    background:rgba(20,20,28,.9); border:1px solid var(--border);
+    border-radius:8px; padding:8px 12px; backdrop-filter:blur(8px);
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .section-ctrl label { font-size:10px; color:var(--dim); display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .section-ctrl input[type=checkbox] { accent-color:var(--accent); width:18px; height:18px; }
+
+  /* ── Settings drawer (mobile-friendly) ── */
+  .settings-toggle {
+    position:absolute; top:12px; right:12px; z-index:12;
+    width:44px; height:44px; border-radius:12px;
+    border:1px solid var(--border); background:var(--surface);
+    color:var(--text); font-size:20px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    backdrop-filter:blur(8px); transition:all .15s;
+  }
+  .settings-toggle:active { transform:scale(.9); }
+  .settings-drawer {
+    position:absolute; top:64px; right:12px; z-index:11;
+    background:rgba(20,20,28,.95); border:1px solid var(--border);
+    border-radius:12px; padding:14px 16px;
+    backdrop-filter:blur(12px);
+    display:none; flex-direction:column; gap:12px;
+    min-width:180px;
+  }
+  .settings-drawer.open { display:flex; }
+  .settings-drawer label {
+    font-size:12px; color:var(--dim);
+    display:flex; align-items:center; gap:8px; cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .settings-drawer .slider-row { display:flex; flex-direction:column; gap:4px; }
+  .settings-drawer .slider-row span { font-size:10px; color:var(--dim); }
+  .settings-drawer input[type=range] { width:100%; accent-color:var(--accent); height:28px; }
+  .settings-drawer input[type=checkbox] { width:20px; height:20px; accent-color:var(--accent); }
+
+  /* ── Mobile ── */
+  @media (max-width:600px) {
+    .topbar { padding:8px 10px; }
+    .topbar h1 { font-size:12px; letter-spacing:.06em; }
+    .tab { font-size:10px; padding:8px 14px; min-height:36px; }
+    .side button { width:44px; height:44px; font-size:20px; border-radius:12px; }
+    .side { bottom:12px; right:12px; gap:6px; }
+    .info { bottom:12px; left:12px; font-size:9px; }
+    .opacity-ctrl, .section-ctrl { display:none; }
+  }
+  /* Desktop: hide mobile settings toggle, show inline panels */
+  @media (min-width:601px) {
+    .settings-toggle { display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>SARABAND <span>3D</span></h1>
+  <div class="tabs">
+    <button class="tab on" data-lv="all">ALL</button>
+    <button class="tab" data-lv="RDC">RDC</button>
+    <button class="tab" data-lv="Etage">Etage</button>
+  </div>
+</div>
+<div id="renderer">
+  <div class="side">
+    <button id="btn-top" title="Vue dessus">⬒</button>
+  </div>
+  <div class="info" id="info"></div>
+  <div class="opacity-ctrl">
+    <label>Opacité murs <span id="op-val">100%</span></label>
+    <input type="range" id="wall-opacity" min="10" max="100" value="100">
+  </div>
+  <div class="section-ctrl">
+    <label><input type="checkbox" id="show-floor" checked> Sols</label>
+    <label><input type="checkbox" id="show-walls" checked> Murs</label>
+    <label><input type="checkbox" id="show-labels" checked> Labels</label>
+    <label><input type="checkbox" id="show-grid" checked> Grille</label>
+  </div>
+  <!-- Mobile settings -->
+  <button class="settings-toggle" id="settings-btn">⚙</button>
+  <div class="settings-drawer" id="settings-drawer">
+    <div class="slider-row">
+      <span>Opacité murs <b id="op-val-m">100%</b></span>
+      <input type="range" id="wall-opacity-m" min="10" max="100" value="100">
+    </div>
+    <label><input type="checkbox" id="show-floor-m" checked> Sols</label>
+    <label><input type="checkbox" id="show-walls-m" checked> Murs</label>
+    <label><input type="checkbox" id="show-labels-m" checked> Labels</label>
+    <label><input type="checkbox" id="show-grid-m" checked> Grille</label>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+
+const S = 0.01;
+// Sous-Sol fusionné dans RDC
+const LEVELS = {
+  "RDC":   { elev:0, wallH:350, color:0x4486FF },
+  "Etage": { elev:360, wallH:250, color:0x1BE700 },
+};
+
+// Walls — ex-Sous-Sol (elev 0, hauteur 360) + RDC (elev 100, hauteur 250) tous sous "RDC"
+const WALLS_RAW = [
+  ["RDC",232.80,-289.34,1235.80,-289.34,7.5,250],
+  ["RDC",1235.80,-289.34,1232.21,270.84,7.5,250],
+  ["RDC",231.55,273.28,233.39,-292.94,7.5,250],
+  ["RDC",1419.42,187.06,1419.42,-119.94,7.5,250],
+  ["RDC",1419.42,-119.94,1839.71,-119.94,7.5,250],
+  ["RDC",1839.71,-119.94,1839.71,185.06,7.5,250],
+  ["RDC",1839.71,185.06,1423.42,185.06,7.5,250],
+  ["RDC",1234.37,-12.10,1416.96,-12.10,7.5,250],
+  ["RDC",1237.47,-291.18,1839.24,-290.57,7.5,250],
+  ["RDC",1839.24,-290.57,1839.24,-115.57,7.5,250],
+  ["RDC",1838.35,-290.04,2102.73,-288.67,7.5,250],
+  ["RDC",2102.73,-288.67,2102.73,943.33,7.5,250],
+  ["RDC",1844.42,102.01,2103.42,102.01,7.5,250],
+  ["RDC",928.51,268.01,927.46,692.46,7.5,250],
+  ["RDC",1228.38,694.91,1230.13,274.70,7.5,250],
+  ["RDC",230.95,270.86,233.08,695.36,7.5,250],
+  ["RDC",565.45,942.59,565.45,1836.59,7.5,250],
+  ["RDC",565.45,1836.59,229.13,1838.08,7.5,250],
+  ["RDC",229.13,1838.08,226.50,940.63,7.5,250],
+  ["RDC",226.18,1349.60,562.18,1349.60,7.5,250],
+  ["RDC",230.20,689.23,230.20,946.23,7.5,250],
+  ["RDC",559.47,1834.76,1818.47,1834.76,7.5,250],
+  ["RDC",1593.48,938.92,1593.48,1830.92,7.5,250],
+  ["RDC",2097.21,939.74,1818.59,939.74,7.5,250],
+  ["RDC",1818.59,940.49,1818.59,1835.49,7.5,250],
+  ["RDC",1818.59,1835.49,1818.59,1778.49,7.5,250],
+  ["RDC",1818.59,939.74,1593.48,939.74,7.5,250],
+  ["RDC",1593.48,939.74,229.21,939.74,7.5,250],
+  ["RDC",1818.47,1834.76,2105.04,1836.91,7.5,250],
+  ["RDC",2105.04,1836.91,2105.04,1599.76,7.5,250],
+  ["RDC",2102.73,943.33,2102.73,1049.33,7.5,250],
+  ["RDC",1232.21,270.84,928.50,271.58,7.5,250],
+  ["RDC",928.50,271.58,231.55,273.28,7.5,250],
+  ["RDC",233.08,695.36,927.46,694.27,7.5,250],
+  ["RDC",927.46,694.27,1232.15,693.79,7.5,250],
+  ["Etage",1356.09,180.39,1357.35,-191.68,7.5,250],
+  ["Etage",1357.35,-191.68,2102.81,-193.31,7.5,250],
+  ["Etage",2102.81,-193.31,2101.80,177.72,7.5,250],
+  ["Etage",1353.49,186.37,1353.49,479.37,7.5,250],
+  ["Etage",1696.49,184.37,1350.49,184.37,7.5,250],
+  ["Etage",1353.49,479.37,1696.49,479.37,7.5,250],
+  ["Etage",1696.49,479.37,1696.49,184.37,7.5,250],
+  ["Etage",2101.80,177.72,1356.09,180.39,7.5,250],
+  ["Etage",229.13,1838.08,226.50,940.63,7.5,250],
+  ["Etage",625.78,939.98,626.45,1836.59,7.5,250],
+  ["Etage",626.45,1836.59,229.13,1838.08,7.5,250],
+  ["Etage",225.11,944.15,621.11,944.15,7.5,250],
+  ["Etage",602.33,140.13,601.01,699.11,7.5,250],
+  ["Etage",229.80,695.71,928.80,695.71,7.5,250],
+  ["Etage",224.53,139.50,228.49,945.08,7.5,250],
+  ["Etage",231.45,351.16,597.75,351.16,7.5,250],
+  ["Etage",227.74,136.70,928.74,136.70,7.5,250],
+  ["Etage",925.63,136.42,925.63,699.42,7.5,250],
+];
+
+const ROOMS_RAW = [
+  ["RDC","#4486FF",[[240.22,-285.81],[1226.99,-283.32],[1226.41,264.66],[231.34,272.71]]],
+  ["RDC","#6688BB",[[1238.70,-13.33],[1238.70,-286.38],[1836.25,-287.61],[1834.56,-120.52],[1415.30,-125.10],[1414.07,-10.02]]],
+  ["RDC","#E04EFF",[[1423.84,-116.24],[1831.01,-116.97],[1834.20,186.82],[1421.62,185.22]]],
+  ["RDC","#6688BB",[[1238.10,-8.42],[1420.20,-6.74],[1420.20,191.19],[1840.20,191.19],[1847.82,102.71],[2096.93,105.90],[2101.39,943.84],[985.09,937.65],[236.17,933.93],[230.16,695.28],[1047.10,697.58],[1232.10,697.58]]],
+  ["RDC","#6688BB",[[1846.27,-286.31],[2109.66,-288.67],[2103.86,103.65],[1847.28,106.92]]],
+  ["RDC","#FFC657",[[933.00,271.39],[1227.55,271.75],[1224.23,687.95],[931.19,690.03]]],
+  ["RDC","#C18400",[[233.47,278.58],[927.18,270.84],[927.87,688.99],[235.34,691.50]]],
+  ["RDC","#4A4A4A",[[231.76,943.35],[562.76,943.35],[562.76,1345.35],[231.76,1342.42]]],
+  ["RDC","#4A4A4A",[[230.15,1352.84],[558.83,1354.16],[560.15,1831.13],[231.47,1834.71]]],
+  ["RDC","#FF8C87",[[562.42,941.21],[1594.38,941.06],[1591.75,1830.70],[559.19,1830.77]]],
+  ["RDC","#FFADAD",[[1596.11,940.24],[1818.72,938.92],[1816.09,1830.67],[1593.48,1831.99]]],
+  ["RDC","#6688BB",[[1821.75,942.02],[2105.01,942.02],[2105.01,1840.02],[1822.01,1840.02]]],
+  ["Etage","#1BE700",[[1359.24,-187.89],[2104.24,-187.89],[2104.24,176.11],[1359.24,179.11]]],
+  ["Etage","#1BE700",[[1359.13,192.26],[1690.99,192.26],[1693.01,476.47],[1357.10,476.47]]],
+  ["Etage","#888888",[[1700.92,181.96],[1830.47,180.48],[1830.47,303.48],[1699.47,303.48]]],
+  ["Etage","#1BE700",[[230.17,940.24],[622.17,940.24],[622.17,1832.24],[226.22,1834.62]]],
+  ["Etage","#FFFD7A",[[229.10,347.74],[604.50,346.42],[601.87,692.85],[231.73,696.80]]],
+  ["Etage","#E04EFF",[[606.06,139.86],[921.06,139.86],[921.06,692.86],[605.06,692.86]]],
+  ["Etage","#FFFD7A",[[230.66,138.54],[599.47,141.18],[600.79,350.61],[233.29,346.66]]],
+  ["Etage","#888888",[[231.49,699.19],[624.77,693.12],[622.85,941.88],[230.17,940.24],[232.81,836.18],[242.60,803.01],[251.63,852.84],[282.72,887.10],[312.40,898.64],[341.84,901.16],[381.65,899.40],[401.94,872.51],[418.68,845.41],[426.01,812.33],[421.32,780.40],[410.75,759.20],[395.99,740.51],[371.70,726.32],[346.82,718.22],[311.81,721.03],[286.82,731.98],[265.72,749.51],[245.95,781.93],[231.49,831.69]]],
+  ["RDC","#E04EFF",[[1423.84,-116.24],[1831.01,-116.97],[1834.20,186.82],[1421.62,185.22]]],
+];
+
+const DOORS_RAW = [
+  ["Etage",1767.45,178.66,91.5,9.5,0],
+  ["Etage",1698.16,246.60,91.5,9.5,1.5749],
+  ["RDC",1418.78,72.89,91.5,9.5,1.5749],
+  ["RDC",1234.61,97.92,109.74,11.70,1.5749],
+  ["RDC",1318.48,-9.33,91.5,9.5,3.1523],
+  ["RDC",1977.05,105.41,91.5,9.5,0],
+  ["RDC",1968.27,940.57,195.30,6.31,0],
+  ["RDC",2103.20,175.67,91.5,9.5,1.568],
+  ["RDC",493.17,940.70,91.5,9.5,0],
+  ["RDC",398.92,1350.77,91.5,9.5,0],
+  ["RDC",1595.76,1661.55,91.5,9.5,1.5701],
+  ["RDC",1379.70,940.14,127.96,7.26,3.1406],
+  ["Etage",506.13,944.29,91.5,9.5,0],
+  ["Etage",498.47,694.92,141.55,10.82,0],
+  ["Etage",500.03,351.37,94.13,8.18,0],
+  ["RDC",1229.46,595.29,91.5,9.5,1.5868],
+  ["RDC",689.29,690.55,91.5,18.61,3.1416],
+];
+
+const FURNITURE_RAW = [
+  ["RDC","Escalier droit",1756.10,470.63,100,334.30,0],
+  ["RDC","Escalier colimaçon",334.13,809.49,184.20,183.73,0.0074],
+];
+
+const LABELS_RAW = [
+  ["Etage",1794.34,57.16,"MONTAGE IMAGE 1","#44ff44"],
+  ["Etage",1531.58,353.42,"MONT. IMAGE 3","#44ff44"],
+  ["RDC",1631.90,35.73,"ETALONNAGE 1","#dd66ff"],
+  ["Etage",428.94,1416.52,"MONTAGE IMAGE 2","#44ff44"],
+  ["RDC",1538.18,-194.36,"NODAL 2","#6699ff"],
+  ["RDC",733.79,-13.92,"AUDITORIUM 70m³","#4499cc"],
+  ["RDC",574.52,496.55,"MONTAGE SON 1","#ff6666"],
+  ["RDC",1085.78,437.39,"CABINE SPEAK","#ffcc55"],
+  ["RDC",377.72,1149.24,"LABO","#aaaaaa"],
+  ["RDC",380.57,1554.82,"NODAL 1","#aaaaaa"],
+  ["RDC",1708.55,1414.12,"NODAL 3","#ff6666"],
+  ["RDC",1075.19,1361.48,"AUDITORIUM 200m³","#ff6666"],
+  ["RDC",1981.01,-165.14,"SANITAIRES","#6699ff"],
+  ["Etage",410.99,556.69,"BUREAU ADMIN","#ccaa44"],
+  ["Etage",769.91,451.20,"ETALONNAGE 2","#dd66ff"],
+  ["Etage",427.04,304.03,"STOCK","#ccaa44"],
+  ["RDC",1550.31,797.46,"ACCUEIL","#cccccc"],
+  ["RDC",1997.49,1447.94,"PATIO","#cccccc"],
+];
+
+// ═══════════════════════════════════════════════════════════
+// THREE.JS — no shadows, SSAO postprocessing
+// ═══════════════════════════════════════════════════════════
+const container = document.getElementById('renderer');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.012);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
+camera.position.set(12, 14, 20);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = false; // pas d'ombres portées
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+container.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.48;
+controls.minDistance = 1;
+controls.maxDistance = 80;
+controls.target.set(10, 1, 5);
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+
+// Lighting — hemisphere pour faux AO (sol sombre, ciel clair)
+scene.add(new THREE.HemisphereLight(0xdde4f0, 0x0a0a12, 0.9));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+dirLight.position.set(15, 25, 10);
+scene.add(dirLight);
+const fillLight = new THREE.DirectionalLight(0x6666aa, 0.25);
+fillLight.position.set(-10, 8, -8);
+scene.add(fillLight);
+
+
+
+// ── Groups ──
+const groups = {}, floorGroups = {}, wallGroups = {};
+const labelGroup = new THREE.Group();
+scene.add(labelGroup);
+for (const name of Object.keys(LEVELS)) {
+  groups[name] = new THREE.Group();
+  floorGroups[name] = new THREE.Group();
+  wallGroups[name] = new THREE.Group();
+  groups[name].add(floorGroups[name]);
+  groups[name].add(wallGroups[name]);
+  scene.add(groups[name]);
+}
+
+const gridHelper = new THREE.GridHelper(50, 50, 0x222233, 0x111118);
+gridHelper.position.y = -0.01;
+scene.add(gridHelper);
+
+
+// ═══════════════════════════════════════════════════════════
+// BUILD GEOMETRY (no castShadow / receiveShadow)
+// ═══════════════════════════════════════════════════════════
+let wallMaterials = {};
+let wallOpacity = 1.0;
+
+function buildFloors() {
+  for (const n of Object.keys(LEVELS)) {
+    while (floorGroups[n].children.length) floorGroups[n].remove(floorGroups[n].children[0]);
+  }
+  ROOMS_RAW.forEach(([lvName, colorHex, pts]) => {
+    const lv = LEVELS[lvName];
+    if (!lv || pts.length < 3) return;
+    const shape = new THREE.Shape();
+    shape.moveTo(pts[0][0] * S, pts[0][1] * S);
+    for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i][0] * S, pts[i][1] * S);
+    shape.closePath();
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(colorHex || '#555555'),
+      roughness: 0.8, metalness: 0.05, transparent: true, opacity: 0.45, side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = lv.elev * S + 0.01;
+    floorGroups[lvName].add(mesh);
+  });
+}
+
+function buildWalls() {
+  for (const n of Object.keys(LEVELS)) {
+    while (wallGroups[n].children.length) wallGroups[n].remove(wallGroups[n].children[0]);
+  }
+  wallMaterials = {};
+  WALLS_RAW.forEach(([lvName, x1, y1, x2, y2, thick, wH]) => {
+    const lv = LEVELS[lvName];
+    if (!lv) return;
+    const dx = (x2 - x1) * S, dz = (y2 - y1) * S;
+    const len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 0.001) return;
+    const height = wH * S, thickness = Math.max(thick * S, 0.04);
+    if (!wallMaterials[lvName]) {
+      wallMaterials[lvName] = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(lv.color).multiplyScalar(0.6),
+        roughness: 0.6, metalness: 0.1, transparent: true, opacity: wallOpacity, side: THREE.DoubleSide,
+      });
+    }
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(len, height, thickness), wallMaterials[lvName]);
+    mesh.position.set(((x1+x2)/2)*S, lv.elev*S + height/2, -((y1+y2)/2)*S);
+    mesh.rotation.y = -Math.atan2(dz, dx);
+    wallGroups[lvName].add(mesh);
+  });
+}
+
+function buildDoors() {
+  DOORS_RAW.forEach(([lvName, x, y, w, d, angle]) => {
+    const lv = LEVELS[lvName];
+    if (!lv) return;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(w * S, 2.1, d * S * 2),
+      new THREE.MeshStandardMaterial({ color: 0xff9f43, roughness: 0.5, transparent: true, opacity: 0.25, side: THREE.DoubleSide })
+    );
+    mesh.position.set(x * S, lv.elev * S + 1.05, -y * S);
+    mesh.rotation.y = -angle;
+    groups[lvName].add(mesh);
+  });
+}
+
+function buildStairs() {
+  FURNITURE_RAW.forEach(([lvName, name, x, y, w, d, angle]) => {
+    const lv = LEVELS[lvName]; if (!lv) return;
+    const group = new THREE.Group();
+    group.position.set(x * S, lv.elev * S, -y * S);
+    group.rotation.y = -angle;
+    if (name.includes('colima')) {
+      const radius = Math.min(w, d) / 2 * S, height = 4.0, nSteps = 20;
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, height, 8),
+        new THREE.MeshStandardMaterial({ color: 0x333344, metalness: 0.6, roughness: 0.3 })
+      );
+      pole.position.y = height / 2; group.add(pole);
+      for (let i = 0; i < nSteps; i++) {
+        const t = i / nSteps, sa = t * Math.PI * 4;
+        const step = new THREE.Mesh(
+          new THREE.BoxGeometry(radius, 0.03, 0.25),
+          new THREE.MeshStandardMaterial({ color: 0x6c8aff, roughness: 0.4, metalness: 0.2, transparent: true, opacity: 0.7 })
+        );
+        step.position.set(Math.cos(sa)*radius*0.5, t*height, Math.sin(sa)*radius*0.5);
+        step.rotation.y = -sa; group.add(step);
+      }
+      const pts = [];
+      for (let i = 0; i <= 100; i++) {
+        const t = i/100, a = t*Math.PI*4;
+        pts.push(new THREE.Vector3(Math.cos(a)*radius, t*height, Math.sin(a)*radius));
+      }
+      group.add(new THREE.Mesh(
+        new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 80, 0.02, 6, false),
+        new THREE.MeshStandardMaterial({ color: 0x222233, metalness: 0.7, roughness: 0.2 })
+      ));
+    } else {
+      const sw = w*S, sd = d*S, height = 3.5, nSteps = 14;
+      for (let i = 0; i < nSteps; i++) {
+        const t = i/nSteps;
+        const step = new THREE.Mesh(
+          new THREE.BoxGeometry(sw, 0.04, sd/nSteps*0.9),
+          new THREE.MeshStandardMaterial({ color: 0x6c8aff, roughness: 0.4, metalness: 0.2, transparent: true, opacity: 0.7 })
+        );
+        step.position.set(0, t*height, -sd/2 + (sd/nSteps)*(i+0.5));
+        group.add(step);
+      }
+      const stringerLen = Math.sqrt(sd*sd + height*height);
+      const stringerAngle = Math.atan2(height, sd);
+      const sGeo = new THREE.BoxGeometry(0.03, 0.06, stringerLen);
+      const sMat = new THREE.MeshStandardMaterial({ color: 0x333344, metalness: 0.5, roughness: 0.3 });
+      for (const side of [-1, 1]) {
+        const s = new THREE.Mesh(sGeo, sMat);
+        s.position.set(side*sw/2, height/2, 0);
+        s.rotation.x = -stringerAngle;
+        group.add(s);
+      }
+    }
+    groups[lvName].add(group);
+  });
+}
+
+const labelSprites = [];
+function makeTextSprite(text, color) {
+  const c = document.createElement('canvas'), ctx = c.getContext('2d');
+  c.width = 512; c.height = 128;
+  ctx.font = 'bold 36px "DM Sans", sans-serif';
+  ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, c.width/2, c.height/2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false, sizeAttenuation: true }));
+  sprite.scale.set(3.5, 0.9, 1);
+  sprite.userData.baseScale = [3.5, 0.9, 1];
+  return sprite;
+}
+
+function buildLabels() {
+  while (labelGroup.children.length) labelGroup.remove(labelGroup.children[0]);
+  labelSprites.length = 0;
+  LABELS_RAW.forEach(([lvName, x, y, text, color]) => {
+    const lv = LEVELS[lvName]; if (!lv) return;
+    const sprite = makeTextSprite(text, color);
+    sprite.position.set(x*S, lv.elev*S + lv.wallH*S*0.5 + 0.3, -y*S);
+    sprite.userData.level = lvName;
+    labelGroup.add(sprite);
+    labelSprites.push(sprite);
+  });
+}
+
+buildFloors(); buildWalls(); buildDoors(); buildStairs(); buildLabels();
+
+// ═══════════════════════════════════════════════════════════
+// VISIBILITY & CONTROLS
+// ═══════════════════════════════════════════════════════════
+let activeLevel = 'all';
+
+function updateVisibility() {
+  for (const [name, group] of Object.entries(groups))
+    group.visible = (activeLevel === 'all' || activeLevel === name);
+  labelSprites.forEach(s => s.visible = (activeLevel === 'all' || s.userData.level === activeLevel));
+}
+updateVisibility();
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+    tab.classList.add('on');
+    activeLevel = tab.dataset.lv;
+    updateVisibility(); topView();
+  });
+});
+
+function getVisibleBounds() {
+  const box = new THREE.Box3();
+  for (const [n, g] of Object.entries(groups)) { if (g.visible) box.expandByObject(g); }
+  if (box.isEmpty()) box.set(new THREE.Vector3(0,0,0), new THREE.Vector3(20,5,20));
+  return box;
+}
+function fitCamera() {
+  const box = getVisibleBounds(), center = new THREE.Vector3(), size = new THREE.Vector3();
+  box.getCenter(center); box.getSize(size);
+  const d = Math.max(size.x, size.y, size.z) * 1.1;
+  controls.target.copy(center);
+  camera.position.set(center.x + d*0.6, center.y + d*0.5, center.z + d*0.7);
+  controls.update();
+}
+function topView() {
+  const box = getVisibleBounds(), center = new THREE.Vector3(), size = new THREE.Vector3();
+  box.getCenter(center); box.getSize(size);
+  controls.target.copy(center);
+  // Fit to viewport using FOV + aspect ratio
+  const fov = camera.fov * Math.PI / 180;
+  const aspect = camera.aspect;
+  const dH = (size.z / 2) / Math.tan(fov / 2);
+  const dW = (size.x / 2) / (Math.tan(fov / 2) * aspect);
+  const d = Math.max(dH, dW) * 1.1;
+  camera.position.set(center.x, center.y + d, center.z + 0.01);
+  controls.update();
+}
+function perspView() {
+  const box = getVisibleBounds(), center = new THREE.Vector3(), size = new THREE.Vector3();
+  box.getCenter(center); box.getSize(size);
+  const d = Math.max(size.x, size.y, size.z);
+  controls.target.copy(center);
+  camera.position.set(center.x - d*0.4, center.y + d*0.35, center.z + d*0.7);
+  controls.update();
+}
+
+document.getElementById('btn-top').addEventListener('click', topView);
+
+// ── Sync desktop + mobile controls ──
+function setWallOpacity(v) {
+  wallOpacity = v / 100;
+  for (const m of Object.values(wallMaterials)) m.opacity = wallOpacity;
+  // Update wall transparency flag
+  for (const m of Object.values(wallMaterials)) m.transparent = wallOpacity < 1;
+  document.getElementById('op-val').textContent = v + '%';
+  document.getElementById('op-val-m').textContent = v + '%';
+  document.getElementById('wall-opacity').value = v;
+  document.getElementById('wall-opacity-m').value = v;
+}
+function syncCheck(id, checked) {
+  document.getElementById(id).checked = checked;
+  document.getElementById(id + '-m').checked = checked;
+}
+function toggleFloor(c) { for (const g of Object.values(floorGroups)) g.visible = c; syncCheck('show-floor', c); }
+function toggleWalls(c) { for (const g of Object.values(wallGroups)) g.visible = c; syncCheck('show-walls', c); }
+function toggleLabels(c) { labelGroup.visible = c; syncCheck('show-labels', c); }
+function toggleGrid(c) { gridHelper.visible = c; syncCheck('show-grid', c); }
+
+// Desktop
+document.getElementById('wall-opacity').addEventListener('input', e => setWallOpacity(parseInt(e.target.value)));
+document.getElementById('show-floor').addEventListener('change', e => toggleFloor(e.target.checked));
+document.getElementById('show-walls').addEventListener('change', e => toggleWalls(e.target.checked));
+document.getElementById('show-labels').addEventListener('change', e => toggleLabels(e.target.checked));
+document.getElementById('show-grid').addEventListener('change', e => toggleGrid(e.target.checked));
+// Mobile
+document.getElementById('wall-opacity-m').addEventListener('input', e => setWallOpacity(parseInt(e.target.value)));
+document.getElementById('show-floor-m').addEventListener('change', e => toggleFloor(e.target.checked));
+document.getElementById('show-walls-m').addEventListener('change', e => toggleWalls(e.target.checked));
+document.getElementById('show-labels-m').addEventListener('change', e => toggleLabels(e.target.checked));
+document.getElementById('show-grid-m').addEventListener('change', e => toggleGrid(e.target.checked));
+// Settings toggle
+document.getElementById('settings-btn').addEventListener('click', () => {
+  document.getElementById('settings-drawer').classList.toggle('open');
+});
+// Close drawer when tapping outside
+container.addEventListener('pointerdown', e => {
+  if (!e.target.closest('.settings-drawer') && !e.target.closest('.settings-toggle')) {
+    document.getElementById('settings-drawer').classList.remove('open');
+  }
+});
+// Wall opacity 100% = no transparency needed (perf)
+for (const m of Object.values(wallMaterials)) m.transparent = false;
+
+// ═══════════════════════════════════════════════════════════
+// RENDER LOOP with SSAO
+// ═══════════════════════════════════════════════════════════
+function onResize() {
+  const w = container.clientWidth, h = container.clientHeight;
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+const infoEl = document.getElementById('info');
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+
+  // Adaptive label sizing
+  labelSprites.forEach(s => {
+    if (!s.visible) return;
+    const d = camera.position.distanceTo(s.position);
+    const f = Math.max(0.4, Math.min(2.0, d / 15));
+    const b = s.userData.baseScale;
+    s.scale.set(b[0] * f, b[1] * f, 1);
+  });
+
+  renderer.render(scene, camera);
+  infoEl.textContent = `${activeLevel === 'all' ? 'ALL' : activeLevel}`;
+}
+topView(); animate();
+</script>
+</body>
+</html>
